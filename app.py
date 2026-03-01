@@ -1,29 +1,23 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import date
+from datetime import datetime
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Gestión Guardias Jaén", layout="wide")
+st.set_page_config(page_title="Gestión Guardias Jaén", layout="wide", page_icon="🏥")
 
-# Nombres de archivos fijos para que sea un registro único
 PROF_FILE = "base_datos_profesionales.csv"
 SOLICITUDES_FILE = "registro_guardias.csv"
 
-# --- INICIALIZACIÓN (Solo se ejecuta una vez) ---
+# --- INICIALIZACIÓN ---
 def init_dbs():
-    # Solo creamos los archivos si NO existen
     if not os.path.exists(PROF_FILE):
-        df_p = pd.DataFrame(columns=["Nombre y Apellidos", "SUAP", "Correo"])
-        df_p.to_csv(PROF_FILE, index=False, encoding='utf-8-sig')
-    
+        pd.DataFrame(columns=["Nombre y Apellidos", "SUAP", "Correo"]).to_csv(PROF_FILE, index=False, encoding='utf-8-sig')
     if not os.path.exists(SOLICITUDES_FILE):
-        # Definimos las columnas exactas para un Excel limpio
-        df_s = pd.DataFrame(columns=[
+        pd.DataFrame(columns=[
             "ID", "Fecha_Solicitud", "Tipo", "Solicitante", "SUAP_Origen", 
             "Correo_Solicitante", "Fecha_Evento", "Receptor", "Estado"
-        ])
-        df_s.to_csv(SOLICITUDES_FILE, index=False, encoding='utf-8-sig')
+        ]).to_csv(SOLICITUDES_FILE, index=False, encoding='utf-8-sig')
 
 init_dbs()
 
@@ -42,14 +36,10 @@ if st.session_state.pagina == 'inicio':
     st.title("🏥 Gestión de Guardias - Distrito Jaén")
     st.write("---")
     col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Personal")
-        if st.button("ACCESO PROFESIONAL", use_container_width=True):
-            ir_a('profesional')
-    with col2:
-        st.subheader("Gestión")
-        if st.button("ACCESO ADMINISTRADOR", use_container_width=True):
-            ir_a('admin_login')
+    if col1.button("ACCESO PROFESIONAL", use_container_width=True):
+        ir_a('profesional')
+    if col2.button("ACCESO ADMINISTRADOR", use_container_width=True):
+        ir_a('admin_login')
 
 # ---------------------------------------------------------
 # 2. LOGIN ADMIN
@@ -58,49 +48,42 @@ elif st.session_state.pagina == 'admin_login':
     st.title("🔐 Acceso Administrativo")
     pwd = st.text_input("Contraseña:", type="password")
     c1, c2 = st.columns(2)
-    if c1.button("Entrar"):
+    if c1.button("Entrar", use_container_width=True):
         if pwd == "@1234#":
             ir_a('admin_panel')
         else:
             st.error("Contraseña incorrecta")
-    if c2.button("Volver"):
+    if c2.button("Volver", use_container_width=True):
         ir_a('inicio')
 
 # ---------------------------------------------------------
-# 3. VENTANA PROFESIONAL (ÚNICO REGISTRO)
+# 3. VENTANA PROFESIONAL
 # ---------------------------------------------------------
 elif st.session_state.pagina == 'profesional':
-    st.title("📝 Formulario de Solicitud")
+    st.title("📝 Nueva Solicitud")
     if st.button("← Volver"):
         ir_a('inicio')
 
     df_p = pd.read_csv(PROF_FILE)
     if df_p.empty:
-        st.warning("No hay profesionales registrados. Avise al administrador.")
+        st.warning("No hay profesionales registrados.")
     else:
         lista_nombres = sorted(df_p["Nombre y Apellidos"].tolist())
-        
-        with st.form("nueva_peticion"):
+        with st.form("form_solicitud"):
             solicitante = st.selectbox("Seleccione su Nombre:", [""] + lista_nombres)
             tipo = st.radio("Operación:", ["Cambio de guardia", "Cesión de guardia"], horizontal=True)
-            
             col1, col2 = st.columns(2)
             fecha_g = col1.date_input("Fecha de la guardia:", format="DD/MM/YYYY")
-            receptor = col2.selectbox("Profesional Receptor:", [""] + lista_nombres)
+            receptor = col2.selectbox("¿Quién asume la guardia?", [""] + lista_nombres)
             
-            if st.form_submit_button("REGISTRAR"):
+            if st.form_submit_button("REGISTRAR SOLICITUD"):
                 if solicitante and receptor and solicitante != receptor:
-                    # 1. Leer el archivo único
                     df_s = pd.read_csv(SOLICITUDES_FILE)
-                    
-                    # 2. Obtener datos del solicitante
                     datos_sol = df_p[df_p["Nombre y Apellidos"] == solicitante].iloc[0]
-                    
-                    # 3. Crear nueva fila con ID incremental
-                    nuevo_id = 1 if df_s.empty else df_s["ID"].max() + 1
+                    nuevo_id = 1 if df_s.empty else int(df_s["ID"].max() + 1)
                     nueva_fila = pd.DataFrame([{
-                        "ID": int(nuevo_id),
-                        "Fecha_Solicitud": date.today().strftime('%d/%m/%Y'),
+                        "ID": nuevo_id,
+                        "Fecha_Solicitud": datetime.now().strftime('%d/%m/%Y'),
                         "Tipo": tipo,
                         "Solicitante": solicitante,
                         "SUAP_Origen": datos_sol["SUAP"],
@@ -109,71 +92,116 @@ elif st.session_state.pagina == 'profesional':
                         "Receptor": receptor,
                         "Estado": "Pendiente"
                     }])
-                    
-                    # 4. Añadir y SOBRESCRIBIR el mismo archivo
                     df_final = pd.concat([df_s, nueva_fila], ignore_index=True)
                     df_final.to_csv(SOLICITUDES_FILE, index=False, encoding='utf-8-sig')
-                    
-                    st.success(f"Guardado en el registro único con ID {nuevo_id}")
+                    st.success(f"Guardado con ID {nuevo_id}")
                 else:
-                    st.error("Revise que los nombres sean distintos y estén seleccionados.")
+                    st.error("Verifique los nombres.")
 
 # ---------------------------------------------------------
-# 4. VENTANA ADMINISTRADOR (GESTIÓN Y LIMPIEZA)
+# 4. VENTANA ADMINISTRADOR
 # ---------------------------------------------------------
 elif st.session_state.pagina == 'admin_panel':
-    st.title("⚙️ Panel de Control")
+    st.title("⚙️ Panel de Gestión Administrativa")
     if st.sidebar.button("Cerrar Sesión"):
         ir_a('inicio')
 
-    t1, t2, t3 = st.tabs(["Solicitudes", "Profesionales", "Descargar Único Excel"])
+    t1, t2, t3, t4 = st.tabs(["Validar Solicitudes", "Gestionar Personal", "📊 Estadísticas", "Descargar Excel"])
 
+    # TAB 1: VALIDACIÓN (Listado General)
     with t1:
         df_s = pd.read_csv(SOLICITUDES_FILE)
-        if not df_s.empty:
-            st.dataframe(df_s, use_container_width=True)
-            
-            st.write("### Modificar o Borrar")
-            c1, c2, c3 = st.columns(3)
-            id_sel = c1.selectbox("ID:", df_s["ID"].tolist())
-            accion = c2.selectbox("Acción:", ["Aceptar ✅", "Rechazar ❌", "ELIMINAR 🗑️"])
-            
-            if c3.button("Confirmar"):
-                if accion == "ELIMINAR 🗑️":
-                    df_s = df_s[df_s["ID"] != id_sel]
-                else:
-                    df_s.loc[df_s["ID"] == id_sel, "Estado"] = accion
-                
-                df_s.to_csv(SOLICITUDES_FILE, index=False, encoding='utf-8-sig')
-                st.rerun()
-        else:
-            st.info("Registro vacío.")
+        st.subheader("🔍 Buscador y Filtros")
+        c_f1, c_f2, c_f3 = st.columns([2, 1, 1])
+        busqueda = c_f1.text_input("Buscar por Nombre:")
+        mes_v = c_f2.selectbox("Mes:", ["Todos", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"], key="mv")
+        anio_v = c_f3.selectbox("Año:", ["Todos"] + [str(a) for a in range(2024, 2031)], key="av")
 
-    with t2:
-        st.subheader("Alta de Personal")
-        if 'k' not in st.session_state: st.session_state.k = 0
-        with st.form(key=f"f_{st.session_state.k}"):
-            n = st.text_input("Nombre completo")
-            s = st.text_input("Centro")
-            m = st.text_input("Email")
-            if st.form_submit_button("Añadir"):
-                df_p = pd.read_csv(PROF_FILE)
-                df_p = pd.concat([df_p, pd.DataFrame([{"Nombre y Apellidos": n, "SUAP": s, "Correo": m}])], ignore_index=True)
-                df_p.to_csv(PROF_FILE, index=False, encoding='utf-8-sig')
-                st.session_state.k += 1
-                st.rerun()
+        df_filtrado = df_s.copy()
+        if busqueda:
+            df_filtrado = df_filtrado[df_filtrado["Solicitante"].str.contains(busqueda, case=False, na=False) | df_filtrado["Receptor"].str.contains(busqueda, case=False, na=False)]
+        if mes_v != "Todos":
+            df_filtrado = df_filtrado[df_filtrado["Fecha_Evento"].str.split('/').str[1] == mes_v]
+        if anio_v != "Todos":
+            df_filtrado = df_filtrado[df_filtrado["Fecha_Evento"].str.split('/').str[2] == anio_v]
+
+        st.dataframe(df_filtrado, use_container_width=True)
         
+        if not df_filtrado.empty:
+            st.divider()
+            c1, c2, c3 = st.columns(3)
+            id_sel = c1.selectbox("ID Seleccionado:", df_filtrado["ID"].tolist())
+            accion = c2.selectbox("Acción:", ["Aceptar ✅", "Rechazar ❌", "ELIMINAR 🗑️"])
+            if c3.button("Ejecutar", use_container_width=True):
+                df_original = pd.read_csv(SOLICITUDES_FILE)
+                if accion == "ELIMINAR 🗑️":
+                    df_original = df_original[df_original["ID"] != id_sel]
+                else:
+                    df_original.loc[df_original["ID"] == id_sel, "Estado"] = accion
+                df_original.to_csv(SOLICITUDES_FILE, index=False, encoding='utf-8-sig')
+                st.rerun()
+
+    # TAB 2: PERSONAL
+    with t2:
+        st.subheader("Alta de Profesionales")
+        if 'rk' not in st.session_state: st.session_state.rk = 0
+        with st.form(key=f"f_p_{st.session_state.rk}"):
+            n, s, m = st.text_input("Nombre"), st.text_input("SUAP"), st.text_input("Email")
+            if st.form_submit_button("GUARDAR"):
+                if n and s and m:
+                    df_p = pd.read_csv(PROF_FILE)
+                    df_p = pd.concat([df_p, pd.DataFrame([{"Nombre y Apellidos": n, "SUAP": s, "Correo": m}])], ignore_index=True)
+                    df_p.to_csv(PROF_FILE, index=False, encoding='utf-8-sig')
+                    st.session_state.rk += 1
+                    st.rerun()
         df_p_list = pd.read_csv(PROF_FILE)
         st.dataframe(df_p_list, use_container_width=True)
         if not df_p_list.empty:
-            borrar_p = st.selectbox("Borrar profesional:", df_p_list["Nombre y Apellidos"].tolist())
-            if st.button("Eliminar"):
+            borrar_p = st.selectbox("Eliminar profesional:", df_p_list["Nombre y Apellidos"].tolist())
+            if st.button("🗑️ Eliminar"):
                 df_p_list = df_p_list[df_p_list["Nombre y Apellidos"] != borrar_p]
                 df_p_list.to_csv(PROF_FILE, index=False, encoding='utf-8-sig')
                 st.rerun()
 
+    # TAB 3: ESTADÍSTICAS CON FILTRO TEMPORAL
     with t3:
-        # Aquí siempre se descarga el archivo centralizado
+        st.subheader("📊 Análisis de Actividad")
+        df_s = pd.read_csv(SOLICITUDES_FILE)
+        df_aceptadas = df_s[df_s["Estado"] == "Aceptada ✅"]
+
+        # Filtro específico para las estadísticas
+        st.write("---")
+        st.write("#### 📅 Filtrar periodo de estadísticas")
+        ce1, ce2 = st.columns(2)
+        mes_e = ce1.selectbox("Mes Estadísticas:", ["Todos", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"], key="me")
+        anio_e = ce2.selectbox("Año Estadísticas:", ["Todos"] + [str(a) for a in range(2024, 2031)], key="ae")
+
+        df_stats = df_aceptadas.copy()
+        if mes_e != "Todos":
+            df_stats = df_stats[df_stats["Fecha_Evento"].str.split('/').str[1] == mes_e]
+        if anio_e != "Todos":
+            df_stats = df_stats[df_stats["Fecha_Evento"].str.split('/').str[2] == anio_e]
+
+        if df_stats.empty:
+            st.info("No hay datos para el periodo seleccionado.")
+        else:
+            col_est1, col_est2 = st.columns(2)
+            with col_est1:
+                st.write("#### Por Profesional")
+                conteo_p = df_stats["Solicitante"].value_counts().reset_index()
+                conteo_p.columns = ["Profesional", "Cambios"]
+                st.dataframe(conteo_p, hide_index=True, use_container_width=True)
+                st.bar_chart(conteo_p.set_index("Profesional"))
+
+            with col_est2:
+                st.write("#### Por SUAP / Centro")
+                conteo_s = df_stats["SUAP_Origen"].value_counts().reset_index()
+                conteo_s.columns = ["SUAP", "Total"]
+                st.dataframe(conteo_s, hide_index=True, use_container_width=True)
+                st.bar_chart(conteo_s.set_index("SUAP"))
+
+    # TAB 4: EXPORTAR
+    with t4:
         df_final = pd.read_csv(SOLICITUDES_FILE)
         csv = df_final.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
         st.download_button("📥 Descargar Registro Único", csv, "registro_guardias_jaen.csv", "text/csv")
