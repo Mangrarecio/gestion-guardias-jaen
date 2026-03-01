@@ -3,127 +3,167 @@ import pandas as pd
 import os
 from datetime import date
 
-# --- CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="Gestión de Guardias Jaén", layout="centered")
-DB_FILE = "registro_guardias.csv"
+# --- CONFIGURACIÓN E INICIALIZACIÓN ---
+st.set_page_config(page_title="Gestión de Guardias Jaén", layout="wide", page_icon="🏥")
 
-# Inicializar base de datos si no existe
-def init_db():
-    if not os.path.exists(DB_FILE):
-        df = pd.DataFrame(columns=[
-            "Fecha de Firma", "Tipo", "Profesional 1", "Fecha Guardia 1", "SUAP 1",
-            "Profesional 2", "Fecha Guardia 2", "SUAP 2", "Estado"
-        ])
-        df.to_csv(DB_FILE, index=False)
+PROF_FILE = "base_datos_profesionales.csv"
+SOLICITUDES_FILE = "registro_guardias.csv"
 
-init_db()
+def init_dbs():
+    # Base de datos de profesionales (Nombre, SUAP, Correo)
+    if not os.path.exists(PROF_FILE):
+        pd.DataFrame(columns=["Nombre y Apellidos", "SUAP", "Correo"]).to_csv(PROF_FILE, index=False)
+    # Registro de solicitudes
+    if not os.path.exists(SOLICITUDES_FILE):
+        pd.DataFrame(columns=[
+            "ID", "Fecha Solicitud", "Tipo", "Solicitante", "SUAP", "Correo", 
+            "Fecha Cambio/Cesión", "Receptor", "Estado"
+        ]).to_csv(SOLICITUDES_FILE, index=False)
 
-# --- DATOS DE EJEMPLO (Simulando la base de datos de profesionales y centros) ---
-lista_profesionales = ["Selecciona un profesional...", "Juan Pérez (11111111A)", "María Gómez (22222222B)", "Carlos López (33333333C)"]
-lista_suap = ["Selecciona un SUAP...", "SUAP Jaén 1", "SUAP Jaén Sur", "SUAP Martos", "SUAP Alcalá la Real"]
+init_dbs()
 
-# --- BARRA LATERAL: CONTROL DE ACCESO ---
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Junta_de_Andaluc%C3%ADa_logo.svg/1200px-Junta_de_Andaluc%C3%ADa_logo.svg.png", width=150) # Imagen genérica de ejemplo
-st.sidebar.title("Acceso")
-rol = st.sidebar.radio("Selecciona tu perfil:", ["Profesional", "Administrador"])
+# --- FUNCIONES DE APOYO ---
+def cargar_datos(archivo):
+    return pd.read_csv(archivo)
 
-# --- VISTA: PROFESIONAL (Acceso Libre) ---
-if rol == "Profesional":
-    st.title("Aplicación para Cambios/Cesiones de Guardia")
-    st.subheader("Distrito Sanitario Jaén / Jaén Sur")
-    
-    tipo_solicitud = st.radio("Tipo de solicitud:", ["Cambio de guardia (mutuo)", "Cesión de guardia (unidireccional)"])
+def guardar_datos(df, archivo):
+    df.to_csv(archivo, index=False)
 
-    st.write("---")
-    
-    # Formulario basado en la imagen
-    with st.form("formulario_guardias"):
-        profesional_1 = st.selectbox("Listado de profesionales con DNI (Solicitante):", lista_profesionales, key="p1")
+# --- NAVEGACIÓN ---
+st.sidebar.title("🏥 Sistema de Guardias")
+rol = st.sidebar.radio("Ir a:", ["Vista Profesional", "Panel Administrador"])
+
+# ---------------------------------------------------------
+# VISTA PROFESIONAL
+# ---------------------------------------------------------
+if rol == "Vista Profesional":
+    st.title("Solicitud de Cambio o Cesión de Guardia")
+    st.info("Complete los datos para registrar su petición en el sistema.")
+
+    df_profs = cargar_datos(PROF_FILE)
+    nombres_profs = ["Seleccione..."] + df_profs["Nombre y Apellidos"].tolist()
+
+    with st.form("form_registro"):
+        tipo = st.selectbox("Tipo de operación:", ["Cambio de guardia", "Cesión de guardia"])
         
         col1, col2 = st.columns(2)
         with col1:
-            fecha_1 = st.date_input("Cambia la guardia del día:", format="DD/MM/YYYY")
+            # El profesional se elige de la base de datos creada por el administrador
+            solicitante = st.selectbox("Nombre y Apellidos (Solicitante):", nombres_profs)
+            fecha_evento = st.date_input("Fecha del cambio/cesión:", format="DD/MM/YYYY")
+        
         with col2:
-            suap_1 = st.selectbox("en el SUAP:", lista_suap, key="s1")
+            receptor = st.selectbox("Profesional Receptor:", nombres_profs)
+            # Buscamos datos automáticos si el solicitante existe
+            suap_sol = ""
+            email_sol = ""
+            if solicitante != "Seleccione...":
+                row = df_profs[df_profs["Nombre y Apellidos"] == solicitante].iloc[0]
+                suap_sol = row["SUAP"]
+                email_sol = row["Correo"]
             
-        st.write("**con**")
-        
-        profesional_2 = st.selectbox("Listado de profesionales con DNI (Receptor):", lista_profesionales, key="p2")
-        
-        # Si es un cambio, se pide la fecha de retorno. Si es cesión, se oculta.
-        if tipo_solicitud == "Cambio de guardia (mutuo)":
-            col3, col4 = st.columns(2)
-            with col3:
-                fecha_2 = st.date_input("que la tiene el día:", format="DD/MM/YYYY")
-            with col4:
-                suap_2 = st.selectbox("el SUAP (Receptor):", lista_suap, key="s2")
-        else:
-            fecha_2 = None
-            suap_2 = "N/A (Cesión)"
-            
-        st.write("---")
-        st.write("### Quedando la planificación:")
-        
-        if tipo_solicitud == "Cambio de guardia (mutuo)":
-            st.info(f"**{profesional_1 if profesional_1 != 'Selecciona un profesional...' else '[Prof. 1]'}** hace la guardia del día **{fecha_2.strftime('%d/%m/%Y') if fecha_2 else '[Fecha 2]'}**.")
-            st.info(f"Y **{profesional_2 if profesional_2 != 'Selecciona un profesional...' else '[Prof. 2]'}** hace la guardia del día **{fecha_1.strftime('%d/%m/%Y')}**.")
-        else:
-            st.info(f"**{profesional_2 if profesional_2 != 'Selecciona un profesional...' else '[Prof. 2]'}** asume la guardia del día **{fecha_1.strftime('%d/%m/%Y')}**.")
+            st.text_input("SUAP (Automático):", value=suap_sol, disabled=True)
+            st.text_input("Correo (Automático):", value=email_sol, disabled=True)
 
-        st.write("---")
-        fecha_firma = st.date_input("Firmado digitalmente con DNI identificados arriba a fecha:", value=date.today(), format="DD/MM/YYYY")
-        
-        submitted = st.form_submit_button("Enviar Solicitud")
-        
-        if submitted:
-            # Validaciones básicas
-            if "Selecciona" in profesional_1 or "Selecciona" in profesional_2 or "Selecciona" in suap_1:
-                st.error("Por favor, selecciona profesionales y centros válidos en todos los campos.")
+        enviar = st.form_submit_button("Registrar Solicitud")
+
+        if enviar:
+            if solicitante == "Seleccione..." or receptor == "Seleccione..." or solicitante == receptor:
+                st.error("Error: Seleccione profesionales válidos y distintos.")
             else:
-                # Guardar en base de datos (CSV)
-                nuevo_registro = {
-                    "Fecha de Firma": fecha_firma.strftime('%d/%m/%Y'),
-                    "Tipo": tipo_solicitud,
-                    "Profesional 1": profesional_1,
-                    "Fecha Guardia 1": fecha_1.strftime('%d/%m/%Y'),
-                    "SUAP 1": suap_1,
-                    "Profesional 2": profesional_2,
-                    "Fecha Guardia 2": fecha_2.strftime('%d/%m/%Y') if fecha_2 else "N/A",
-                    "SUAP 2": suap_2,
+                df_sol = cargar_datos(SOLICITUDES_FILE)
+                nueva_sol = {
+                    "ID": len(df_sol) + 1,
+                    "Fecha Solicitud": date.today().strftime('%d/%m/%Y'),
+                    "Tipo": tipo,
+                    "Solicitante": solicitante,
+                    "SUAP": suap_sol,
+                    "Correo": email_sol,
+                    "Fecha Cambio/Cesión": fecha_evento.strftime('%d/%m/%Y'),
+                    "Receptor": receptor,
                     "Estado": "Pendiente"
                 }
-                
-                df = pd.read_csv(DB_FILE)
-                df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
-                df.to_csv(DB_FILE, index=False)
-                
-                # Feedback de aceptación (Solicitado en nota manuscrita)
-                st.success("✅ ¡Solicitud registrada correctamente! Tu petición está pendiente de revisión por administración.")
+                df_sol = pd.concat([df_sol, pd.DataFrame([nueva_sol])], ignore_index=True)
+                guardar_datos(df_sol, SOLICITUDES_FILE)
+                st.success(f"✅ {tipo} registrado correctamente. Pendiente de aprobación.")
 
-# --- VISTA: ADMINISTRADOR (Acceso con contraseña) ---
-elif rol == "Administrador":
-    st.title("Panel de Administración")
-    
-    password = st.text_input("Introduce la contraseña de administrador:", type="password")
-    
+# ---------------------------------------------------------
+# PANEL ADMINISTRADOR
+# ---------------------------------------------------------
+else:
+    st.title("Panel de Control Administrativo")
+    password = st.sidebar.text_input("Contraseña:", type="password")
+
     if password == "@1234#":
-        st.success("Acceso concedido.")
-        st.write("Aquí puedes visualizar y descargar el listado histórico de todas las solicitudes volcadas.")
-        
-        try:
-            df_admin = pd.read_csv(DB_FILE)
-            st.dataframe(df_admin, use_container_width=True)
+        tabs = st.tabs(["📋 Gestión de Solicitudes", "👥 Base de Datos Profesionales", "📊 Exportar Datos"])
+
+        # TAB 1: GESTIÓN DE SOLICITUDES (ACEPTAR/RECHAZAR)
+        with tabs[0]:
+            st.subheader("Solicitudes en tiempo real")
+            df_sol = cargar_datos(SOLICITUDES_FILE)
             
-            # Botón para descargar a Excel (CSV)
-            csv = df_admin.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Descargar datos para Excel (CSV)",
-                data=csv,
-                file_name='historico_guardias_jaen.csv',
-                mime='text/csv',
-            )
+            if df_sol.empty:
+                st.write("No hay solicitudes registradas.")
+            else:
+                # Mostrar tabla con estados
+                st.dataframe(df_sol, use_container_width=True)
+                
+                st.divider()
+                st.write("### Acciones de validación")
+                col_id, col_act = st.columns([1, 2])
+                id_modificar = col_id.number_input("ID de la solicitud:", min_value=1, step=1)
+                accion = col_act.selectbox("Acción:", ["Aceptar", "Rechazar"])
+                
+                if st.button("Actualizar Estado"):
+                    if id_modificar in df_sol["ID"].values:
+                        idx = df_sol[df_sol["ID"] == id_modificar].index
+                        nuevo_estado = "Aceptada ✅" if accion == "Aceptar" else "Rechazada ❌"
+                        df_sol.at[idx[0], "Estado"] = nuevo_estado
+                        guardar_datos(df_sol, SOLICITUDES_FILE)
+                        st.success(f"Solicitud {id_modificar} marcada como {nuevo_estado}")
+                        st.rerun()
+                    else:
+                        st.error("ID no encontrado.")
+
+        # TAB 2: AGREGAR PROFESIONALES
+        with tabs[1]:
+            st.subheader("Añadir Profesional a la Base de Datos")
             
-        except FileNotFoundError:
-            st.warning("Todavía no hay registros en la base de datos.")
+            # Usamos una clave en session_state para limpiar los campos
+            if 'form_key' not in st.session_state:
+                st.session_state.form_key = 0
+
+            with st.form(key=f"add_prof_{st.session_state.form_key}"):
+                new_nombre = st.text_input("Nombre y Apellidos")
+                new_suap = st.text_input("SUAP")
+                new_correo = st.text_input("Correo electrónico")
+                
+                submit_prof = st.form_submit_button("Agregar Profesional")
+                
+                if submit_prof:
+                    if new_nombre and new_suap and new_correo:
+                        df_p = cargar_datos(PROF_FILE)
+                        nueva_p = {"Nombre y Apellidos": new_nombre, "SUAP": new_suap, "Correo": new_correo}
+                        df_p = pd.concat([df_p, pd.DataFrame([nueva_p])], ignore_index=True)
+                        guardar_datos(df_p, PROF_FILE)
+                        
+                        st.success(f"Profesional {new_nombre} añadido.")
+                        # Al cambiar la key, el formulario se vacía completamente
+                        st.session_state.form_key += 1
+                        st.rerun()
+                    else:
+                        st.warning("Rellene todos los campos.")
+            
+            st.write("---")
+            st.write("### Lista de Profesionales Actuales")
+            st.dataframe(cargar_datos(PROF_FILE), use_container_width=True)
+
+        # TAB 3: EXPORTAR
+        with tabs[2]:
+            st.subheader("Descargar Histórico")
+            df_final = cargar_datos(SOLICITUDES_FILE)
+            csv = df_final.to_csv(index=False).encode('utf-8')
+            st.download_button("Descargar Excel de Solicitudes (CSV)", csv, "registro_completo.csv", "text/csv")
+
     elif password != "":
-        st.error("Contraseña incorrecta.")
+        st.error("Contraseña incorrecta")
