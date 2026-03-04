@@ -39,7 +39,7 @@ def guardar_datos(pestana, df):
         st.cache_data.clear()
         return True
     except Exception as e:
-        st.error(f"Error crítico al guardar: {e}")
+        st.error(f"Error crítico al guardar en la pestaña '{pestana}'. Verifica que la pestaña existe en el Excel y los encabezados son correctos.")
         return False
 
 # --- 3. FUNCIONES AUXILIARES ---
@@ -50,9 +50,9 @@ def ir_a(p):
     st.session_state.pagina = p
     st.rerun()
 
-def generar_link_email(email_destino, nombre, estado, fecha):
-    asunto = f"Respuesta Solicitud Guardia - {fecha}"
-    cuerpo = f"Hola {nombre},\n\nEn contestación a su solicitud de cambio de guardia, se le notifica que ha sido: {estado.upper()}."
+def generar_link_email(email_destino, nombre, estado, fecha, suap):
+    asunto = f"Resolución de Cambio de Guardia - {fecha}"
+    cuerpo = f"Estimado/a {nombre},\n\nDesde la Administración le notificamos que su solicitud de cambio de guardia en el centro {suap} para la fecha {fecha} ha sido revisada.\n\nESTADO DE LA SOLICITUD: {estado.upper()}.\n\nPara cualquier duda, póngase en contacto con la administración del distrito.\n\nUn cordial saludo."
     return f"mailto:{email_destino}?subject={urllib.parse.quote(asunto)}&body={urllib.parse.quote(cuerpo)}"
 
 # ---------------------------------------------------------
@@ -115,7 +115,6 @@ elif st.session_state.pagina == 'profesional':
             
             st.markdown("---")
             if st.form_submit_button("SOLICITAR CAMBIO", use_container_width=True):
-                # Validaciones
                 if "Selecciona..." in [solicitante, suap_sol, receptor, suap_rec]:
                     st.error("Por favor, selecciona los nombres y SUAP de los desplegables.")
                 elif not dni_sol.strip() or not dni_rec.strip():
@@ -125,7 +124,6 @@ elif st.session_state.pagina == 'profesional':
                 else:
                     df_s = cargar_datos("Solicitudes")
                     if df_s.empty:
-                        # Estructura actualizada con los DNIs
                         df_s = pd.DataFrame(columns=[
                             "ID", "Fecha_Peticion", "Solicitante", "DNI_Solicitante", "SUAP_Solicitante", "Fecha_Guardia_Sol", 
                             "Receptor", "DNI_Receptor", "SUAP_Receptor", "Fecha_Guardia_Rec", "Estado", "Resumen"
@@ -175,10 +173,7 @@ elif st.session_state.pagina == 'admin_panel':
                 c = 'green' if 'Aceptada' in str(val) else 'red' if 'Rechazada' in str(val) else 'orange'
                 return f'color: {c}'
             
-            # Mostramos un resumen claro, pero el Excel guardará todos los datos (incluyendo DNI)
             columnas_mostrar = ["ID", "Fecha_Peticion", "Resumen", "Estado"]
-            
-            # Asegurarse de que las columnas existan antes de mostrarlas
             columnas_existentes = [col for col in columnas_mostrar if col in df_s.columns]
             st.dataframe(df_s[columnas_existentes].style.applymap(color_est, subset=['Estado'] if 'Estado' in df_s.columns else []), use_container_width=True, hide_index=True)
             
@@ -192,20 +187,20 @@ elif st.session_state.pagina == 'admin_panel':
                 if guardar_datos("Solicitudes", df_s):
                     st.success("Estado actualizado."); st.rerun()
             
-            # Notificación y Borrado
             st.markdown("---")
             col_notif, col_borrar = st.columns(2)
             
             with col_notif:
-                st.markdown("#### 📧 Notificar")
+                st.markdown("#### 📧 Notificar Resolución")
                 fila = df_s[df_s["ID"] == id_sel].iloc[0]
                 try:
                     email_sol = df_p[df_p["Nombre y Apellidos"] == fila["Solicitante"]]["Correo"].values[0]
                     fecha_guardia = fila.get("Fecha_Guardia_Sol", "fecha solicitada")
-                    link = generar_link_email(email_sol, fila["Solicitante"], fila["Estado"], fecha_guardia)
-                    st.markdown(f'<a href="{link}" target="_blank" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;">Enviar email a {fila["Solicitante"]}</div></a>', unsafe_allow_html=True)
+                    suap_sol = fila.get("SUAP_Solicitante", "su centro")
+                    link = generar_link_email(email_sol, fila["Solicitante"], fila["Estado"], fecha_guardia, suap_sol)
+                    st.markdown(f'<a href="{link}" target="_blank" style="text-decoration:none;"><div style="background-color:#007bff;color:white;padding:10px;border-radius:5px;text-align:center;">Enviar email a {fila["Solicitante"]}</div></a>', unsafe_allow_html=True)
                 except:
-                    st.info("Añade el email del profesional para poder notificarle.")
+                    st.info("Añade el email del profesional en 'Alta Profesionales' para poder notificarle.")
             
             with col_borrar:
                 st.markdown("#### 🗑️ Eliminar Registros")
@@ -222,16 +217,24 @@ elif st.session_state.pagina == 'admin_panel':
     with tab2:
         st.subheader("Registrar Profesional")
         with st.form("alta_pro", clear_on_submit=True):
-            nom = st.text_input("Nombre y Apellidos")
-            correo = st.text_input("Correo Electrónico")
+            col_p1, col_p2 = st.columns(2)
+            nom = col_p1.text_input("Nombre y Apellidos")
+            dni = col_p2.text_input("DNI")
+            
+            col_p3, col_p4 = st.columns(2)
+            suap_prof = col_p3.text_input("SUAP Habitual (Opcional)")
+            correo = col_p4.text_input("Correo Electrónico")
+            
             if st.form_submit_button("Guardar Profesional"):
-                if nom and correo:
+                if nom and dni and correo:
                     df_prof = cargar_datos("Profesionales")
-                    if df_prof.empty: df_prof = pd.DataFrame(columns=["Nombre y Apellidos", "Correo"])
-                    if guardar_datos("Profesionales", pd.concat([df_prof, pd.DataFrame([{"Nombre y Apellidos": nom, "Correo": correo}])], ignore_index=True)):
+                    if df_prof.empty: df_prof = pd.DataFrame(columns=["Nombre y Apellidos", "DNI", "SUAP", "Correo"])
+                    
+                    nueva_fila_pro = pd.DataFrame([{"Nombre y Apellidos": nom, "DNI": dni.upper(), "SUAP": suap_prof, "Correo": correo}])
+                    if guardar_datos("Profesionales", pd.concat([df_prof, nueva_fila_pro], ignore_index=True)):
                         st.success(f"{nom} guardado."); st.rerun()
                 else:
-                    st.error("Rellena ambos campos.")
+                    st.error("El Nombre, DNI y Correo son obligatorios.")
         
         st.divider()
         df_pro_lista = cargar_datos("Profesionales")
@@ -275,7 +278,6 @@ elif st.session_state.pagina == 'admin_panel':
             busqueda = st.selectbox("Escribe el nombre del profesional:", ["Selecciona..."] + sorted(df_p["Nombre y Apellidos"].tolist()))
             
             if busqueda != "Selecciona...":
-                # Asegurarse de que las columnas existan en df_s
                 if "Solicitante" in df_s.columns and "Receptor" in df_s.columns:
                     df_historial = df_s[(df_s["Solicitante"] == busqueda) | (df_s["Receptor"] == busqueda)]
                     
@@ -287,6 +289,6 @@ elif st.session_state.pagina == 'admin_panel':
                         col_disp = [col for col in columnas_historial if col in df_historial.columns]
                         st.dataframe(df_historial[col_disp], use_container_width=True, hide_index=True)
                 else:
-                    st.info("No se encontraron columnas de Solicitante/Receptor. Recuerda limpiar la hoja de Excel.")
+                    st.info("Formato antiguo detectado. Por favor, limpia las solicitudes en Google Sheets.")
         else:
             st.info("Aún no hay suficientes datos para realizar búsquedas.")
