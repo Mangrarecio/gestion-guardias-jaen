@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import io
 import urllib.parse
+import time # Añadido para hacer la pausa automática
 
 # --- 1. CONFIGURACIÓN Y PRIVACIDAD ---
 st.set_page_config(page_title="Gestión Guardias Jaén", layout="wide", page_icon="🏥")
@@ -151,7 +152,9 @@ elif st.session_state.pagina == 'profesional':
                     if guardar_datos("Solicitudes", pd.concat([df_s, nueva_fila], ignore_index=True)):
                         st.balloons()
                         st.success(f"✅ ¡Solicitud firmada y enviada!\n\n**Resumen:** {texto_resumen}")
-                        st.button("Ir al Inicio", on_click=lambda: ir_a('inicio'))
+                        # Solución al error: Esperamos 3 segundos y redirigimos sin usar botones problemáticos
+                        time.sleep(3)
+                        ir_a('inicio')
 
 # ---------------------------------------------------------
 # ⚙️ PANEL ADMINISTRADOR
